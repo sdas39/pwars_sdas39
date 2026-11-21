@@ -1,6 +1,6 @@
 # NEEV — North-East Emergency & Evacuation Grid
 
-**Live App:** https://neev-site-ashen.vercel.app
+**Live App:** [https://neev-site-ashen.vercel.app](https://neev-sitepwars-6mj3nykcy-prompt-wars11.vercel.app/)
 
 ## Problem Statement
 Several regions across North East India face recurring challenges related to floods, landslides, and natural disasters. During emergencies, standard disaster portals often fail because 4G cellular networks collapse, phone batteries drop below 15%, highway washouts (NH-10, NH-6) isolate communities, and dialect barriers delay emergency assistance.
