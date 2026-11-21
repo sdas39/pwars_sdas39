@@ -1,0 +1,1361 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>NEEV Emergency Grid</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.0/babel.min.js"></script>
+<style>
+  /* Layout: sticky command header, situation strip, tabbed matrix, right-hand SOS drawer. Standard = river-teal control room; 2G = amber-on-black terminal. */
+  :root {
+    --ink: #0a1118;
+    --panel: #111c26;
+    --panel-2: #172635;
+    --line: #243546;
+    --text: #e6eef3;
+    --muted: #8ea3b3;
+    --teal: #3fb8af;
+    --sos: #e5383b;
+    --amber: #f5a524;
+    --font-display: "Space Grotesk", system-ui, sans-serif;
+    --font-body: "Inter", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color-scheme: dark;
+  }
+  html, body { background: var(--ink); color: var(--text); }
+  body { font-family: var(--font-body); font-size: 14px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 0; }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 60; background: var(--ink); }
+  html[data-mode="term"], html[data-mode="term"] body { background: #000; color: #ffb000; }
+  html[data-mode="term"] body::before { background: #000; }
+  .font-display { font-family: var(--font-display); }
+  .font-mono { font-family: var(--font-mono); }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .sticky-top { position: sticky; top: env(safe-area-inset-top, 0px); }
+  @keyframes neevpulse { 0%,100% { box-shadow: 0 0 0 0 rgba(229,56,59,.55); } 50% { box-shadow: 0 0 0 14px rgba(229,56,59,0); } }
+  @keyframes neevblink { 0%,49% { opacity: 1; } 50%,100% { opacity: .15; } }
+  @keyframes slidein { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .pulse-sos { animation: neevpulse 1.8s infinite; }
+  .blink { animation: neevblink 1s steps(1) infinite; }
+  .drawer { animation: slidein .22s ease-out; }
+  @media (prefers-reduced-motion: reduce) { .pulse-sos, .blink, .drawer { animation: none; } }
+  html[data-mode="term"] .pulse-sos, html[data-mode="term"] .drawer { animation: none; }
+  select, input, textarea, button { font: inherit; }
+  :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  html[data-mode="term"] :focus-visible { outline-color: #ffb000; }
+  .scroll-x { overflow-x: auto; }
+</style>
+
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+/* ---------- Icons (Lucide path data, inlined) ---------- */
+const ICONS = {
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  pin: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+  phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+  send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  wifioff: '<path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/>',
+  wifi: '<path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.859a10 10 0 0 1 14 0"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/>',
+  battery: '<path d="M22 14v-4"/><path d="M6 10v4"/><rect width="16" height="12" x="2" y="6" rx="2"/>',
+  droplets: '<path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7.29 6.75 7 5.3c-.29 1.45-1.14 2.84-2.29 3.76S3 11.1 3 12.25c0 2.22 1.8 4.05 4 4.05z"/><path d="M12.56 6.6A10.97 10.97 0 0 0 14 3.02c.5 2.5 2 4.9 4 6.5s3 3.5 3 5.5a6.98 6.98 0 0 1-11.91 4.97"/>',
+  bed: '<path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/>',
+  kit: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V4h6v3"/><path d="M12 11v5"/><path d="M9.5 13.5h5"/>',
+  tent: '<path d="M3.5 21 14 3"/><path d="M20.5 21 10 3"/><path d="M15.5 21 12 15l-3.5 6"/><path d="M2 21h20"/>',
+  route: '<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>',
+  radio: '<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>',
+  ship: '<path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1 .6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M19.38 20A11.6 11.6 0 0 0 21 14l-9-4-9 4c0 2.9.94 5.34 2.81 7.76"/><path d="M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6"/><path d="M12 10v4"/><path d="M12 2v3"/>',
+  siren: '<path d="M7 18v-6a5 5 0 1 1 10 0v6"/><path d="M5 21a1 1 0 0 1-1-1v-1a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1z"/><path d="M21 12h1"/><path d="M18.5 4.5 18 5"/><path d="M2 12h1"/><path d="M12 2v1"/><path d="m4.929 4.929.707.707"/><path d="M12 12v6"/>',
+  mountain: '<path d="m8 3 4 8 5-5 5 15H2L8 3z"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  minus: '<path d="M5 12h14"/>',
+  zap: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+  volume: '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>',
+  stop: '<rect width="14" height="14" x="5" y="5" rx="2"/>',
+  qr: '<rect width="5" height="5" x="3" y="3" rx="1"/><rect width="5" height="5" x="16" y="3" rx="1"/><rect width="5" height="5" x="3" y="16" rx="1"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/><path d="M21 21v.01"/><path d="M12 7v3a2 2 0 0 1-2 2H7"/><path d="M3 12h.01"/><path d="M12 3h.01"/><path d="M12 16v.01"/><path d="M16 12h1"/><path d="M21 12v.01"/><path d="M12 21v-1"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  msg: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+};
+function Icon({ name, size = 16, className = "" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true"
+      dangerouslySetInnerHTML={{ __html: ICONS[name] || "" }} />
+  );
+}
+
+/* ---------- Data ---------- */
+const NOW = Date.now();
+const t = (m) => NOW - m * 60000;
+
+const REGIONS = [
+  {
+    id: "ghy", name: "Guwahati & Kamrup (Urban Flood Alert)", short: "Guwahati", code: "GHY", state: "Assam",
+    coords: { lat: 26.14, lon: 91.73, txt: "26.14N,91.73E" }, level: "ORANGE", hazard: "Urban flood · Brahmaputra rising",
+    rain24: 142, rain: [2, 3, 5, 4, 8, 12, 15, 19, 22, 18, 24, 30],
+    gauge: { label: "Brahmaputra @ Pandu", now: "49.41", danger: "49.68", unit: "m" },
+    advisory: "Bharalu and Bahini drains are overflowing into Anil Nagar, Silpukhuri and Ganeshguri. Brahmaputra is 0.27 m below danger mark and rising slowly. Avoid underpasses and move valuables upstairs.",
+    offline: ["BHARALU/BAHINI OVERFLOW: ANIL NAGAR, SILPUKHURI, GANESHGURI UNDER WATER.", "BRAHMAPUTRA 49.41M (DANGER 49.68M) RISING.", "AVOID UNDERPASSES. USE FLYOVERS. BOATS AT ANIL NAGAR & PANDU."],
+    alert: { title: "FLASH FLOOD ADVISORY · KAMRUP METRO", body: "Bharalu rising 18 cm/hr near Anil Nagar. Low-lying wards (Rehabari, Silpukhuri, Lachit Nagar): move to higher ground and the nearest relief camp.", eta: "Estimated impact in 40 min", effect: { chokeId: "g4", status: "SUBMERGED", note: "Auto-advisory: Bharalu overflow at Anil Nagar crossing, 40 cm and rising." } },
+    camps: [
+      { id: "gc1", name: "Cotton University Relief Camp", kind: "camp", area: "Panbazar", km: 2.4, beds: [212, 300], med: [4, 12], water: [9, 20] },
+      { id: "gc2", name: "Sarusajai Stadium Shelter Hub", kind: "camp", area: "Sarusajai", km: 6.8, beds: [340, 600], med: [8, 20], water: [11, 30] },
+      { id: "gc3", name: "Khanapara Community Hall Camp", kind: "camp", area: "Khanapara", km: 9.1, beds: [58, 120], med: [2, 6], water: [3, 8] },
+      { id: "gb1", name: "Anil Nagar Rescue Boat Point", kind: "boat", area: "Bharalu bank", km: 1.9, beds: [14, 24], med: [1, 2], water: [1, 2] },
+      { id: "gb2", name: "Pandu Port NDRF Boat Launch", kind: "boat", area: "Pandu", km: 7.4, beds: [30, 40], med: [1, 3], water: [1, 2] },
+    ],
+    chokes: [
+      { id: "g1", name: "NH-27 · Jalukbari to Azara", note: "Water over carriageway, 35 cm. Only trucks and SUVs getting through.", status: "SUBMERGED", ver: 12, by: "Volunteer", reports: 6 },
+      { id: "g2", name: "GS Road · Ganeshguri Underpass", note: "Underpass full. Use the flyover towards Dispur.", status: "SUBMERGED", ver: 21, by: "Traffic police", reports: 9 },
+      { id: "g3", name: "Saraighat Bridge (NH-27)", note: "Alternate-lane traffic, expect 45 min crossing.", status: "SINGLE-LANE OPEN", ver: 8, by: "Driver", reports: 3 },
+      { id: "g4", name: "Bharalu · Anil Nagar Crossing", note: "Passable on foot only. Boat point operating 24 h.", status: "OPEN", ver: 34, by: "Local resident", reports: 2 },
+      { id: "g5", name: "Jorhat–Nimati Ghat–Majuli Ferry", note: "Services halted after strong current at Nimati. Next check at 14:00.", status: "FERRY HALTED", ver: 47, by: "IWT official", reports: 4 },
+    ],
+    triage: [
+      { id: "R-1031", type: "FLOOD", people: 6, med: true, flags: ["INSULIN", "BOAT"], lang: "AS", loc: "26.17N,91.76E", ts: t(4), status: "NEW", source: "SOS" },
+      { id: "R-1029", type: "MED", people: 1, med: true, loc: "26.15N,91.74E", ts: t(11), status: "DISPATCHED", source: "SOS" },
+      { id: "R-1024", type: "FLOOD", people: 3, med: false, loc: "26.12N,91.79E", ts: t(26), status: "ON SCENE", source: "SOS" },
+    ],
+  },
+  {
+    id: "shl", name: "East Khasi Hills / NH-6 (Landslide & Cloudburst)", short: "East Khasi Hills", code: "SHL", state: "Meghalaya",
+    coords: { lat: 25.57, lon: 91.88, txt: "25.57N,91.88E" }, level: "ORANGE", hazard: "Cloudburst · slope failure",
+    rain24: 218, rain: [4, 6, 9, 14, 22, 31, 40, 52, 47, 38, 55, 61],
+    gauge: { label: "Umiam rain gauge, 3 h", now: "90", danger: "100", unit: "mm" },
+    advisory: "Intense rain over the Umiam catchment saturated slopes above NH-6 and the Mawlai ridge. Debris flows reported near Nongpoh. Move out of houses below cut slopes and keep off hill roads after dark.",
+    offline: ["CLOUDBURST: 90MM IN 3H AT UMIAM. SLOPES SATURATED.", "NH-6 NONGPOH-UMIAM BLOCKED BY DEBRIS. ONE JCB ON SITE.", "LEAVE HOUSES BELOW CUT SLOPES. DO NOT TRAVEL AT NIGHT."],
+    alert: { title: "CLOUDBURST WARNING · EAST KHASI HILLS", body: "Heavy burst recorded over Umiam. Debris-flow risk on NH-6 Nongpoh–Umiam and the Mawlai ridge. Residents below cut slopes: move to Polo Ground or Don Bosco Hall.", eta: "Peak rainfall expected in 55 min", effect: { chokeId: "s3", status: "LANDSLIDE BLOCKED", note: "Auto-advisory: fresh slip near Sohra Road junction after cloudburst." } },
+    camps: [
+      { id: "sc1", name: "Shillong Polo Ground Hub", kind: "camp", area: "Polo", km: 1.2, beds: [188, 400], med: [5, 15], water: [8, 24] },
+      { id: "sc2", name: "Don Bosco Hall Relief Camp", kind: "camp", area: "Laitumkhrah", km: 2.9, beds: [96, 150], med: [3, 8], water: [4, 10] },
+      { id: "sc3", name: "Mawlai Community Hall Shelter", kind: "camp", area: "Mawlai", km: 5.3, beds: [81, 90], med: [3, 4], water: [4, 5] },
+      { id: "sr1", name: "Umiam NDRF Staging Rescue Point", kind: "rescue", area: "Umiam", km: 14.6, beds: [12, 30], med: [2, 4], water: [2, 4] },
+    ],
+    chokes: [
+      { id: "s1", name: "NH-6 · Nongpoh to Umiam", note: "Debris across both lanes. JCB clearing, estimated 3 h.", status: "LANDSLIDE BLOCKED", ver: 9, by: "PWD official", reports: 11 },
+      { id: "s2", name: "NH-6 · Umiam to Shillong Bypass", note: "Light vehicles only. Rockfall risk at Km 78.", status: "SINGLE-LANE OPEN", ver: 17, by: "Driver", reports: 5 },
+      { id: "s3", name: "Shillong–Sohra Road", note: "Open with caution. Watch for water on bends.", status: "OPEN", ver: 29, by: "Volunteer", reports: 2 },
+      { id: "s4", name: "Mawlai–Mawpat Link Road", note: "Mudflow across the road at the school bend.", status: "LANDSLIDE BLOCKED", ver: 38, by: "Local resident", reports: 4 },
+    ],
+    triage: [
+      { id: "R-1033", type: "SLIDE", people: 5, med: true, flags: ["CHILD"], lang: "KH", loc: "25.59N,91.90E", ts: t(3), status: "NEW", source: "SOS" },
+      { id: "R-1027", type: "TOURIST", people: 4, med: false, loc: "25.52N,91.85E", ts: t(19), status: "DISPATCHED", source: "SOS" },
+    ],
+  },
+  {
+    id: "gtk", name: "Gangtok & NH-10 (Highway Cutoff & Evacuation)", short: "Gangtok", code: "GTK", state: "Sikkim",
+    coords: { lat: 27.33, lon: 88.61, txt: "27.33N,88.61E" }, level: "RED", hazard: "NH-10 cut · evacuation",
+    rain24: 186, rain: [6, 8, 12, 15, 20, 26, 34, 41, 38, 45, 50, 58],
+    gauge: { label: "Teesta @ Singtam", now: "2.9", danger: "3.2", unit: "m" },
+    advisory: "NH-10 is blocked by slips near Rangpo and at 29th Mile, cutting Gangtok off from Siliguri. Teesta is 0.3 m below danger. Tourists should shelter in place; stranded vehicles are being moved to Rangpo.",
+    offline: ["NH-10 BLOCKED AT RANGPO & 29TH MILE. GANGTOK CUT FROM SILIGURI.", "TEESTA 2.9M (DANGER 3.2M). TOURISTS: STAY IN HOTEL.", "HELIPAD AT SINGTAM FOR MEDICAL AIRLIFT ONLY."],
+    alert: { title: "LANDSLIDE ALERT · SIKKIM NH-10", body: "Fresh slip reported above Teesta Bazaar. Vehicles on NH-10 should halt at Rangpo transit camp. Do not attempt night crossing.", eta: "BRO crew ETA 2 h 10 min", effect: { chokeId: "k4", status: "LANDSLIDE BLOCKED", note: "Auto-advisory: debris above Teesta Bazaar bridge approach." } },
+    camps: [
+      { id: "kc1", name: "Paljor Stadium Relief Camp", kind: "camp", area: "Gangtok", km: 1.1, beds: [144, 350], med: [3, 12], water: [7, 20] },
+      { id: "kc2", name: "Tadong Community Hall Shelter", kind: "camp", area: "Tadong", km: 4.7, beds: [60, 100], med: [1, 5], water: [3, 6] },
+      { id: "kc3", name: "Rangpo Transit Camp (NH-10)", kind: "camp", area: "Rangpo", km: 28.0, beds: [96, 110], med: [3, 4], water: [4, 5] },
+      { id: "kr1", name: "Singtam Helipad Evac Point", kind: "rescue", area: "Singtam", km: 21.5, beds: [6, 16], med: [1, 2], water: [1, 2] },
+    ],
+    chokes: [
+      { id: "k1", name: "NH-10 · Rangpo to Singtam", note: "Complete blockage. BRO machines on site, no ETA.", status: "LANDSLIDE BLOCKED", ver: 6, by: "BRO officer", reports: 14 },
+      { id: "k2", name: "NH-10 · 29th Mile", note: "Hillside still moving. One lane cleared for ambulances only.", status: "SINGLE-LANE OPEN", ver: 15, by: "Driver", reports: 8 },
+      { id: "k3", name: "Gangtok–Nathula Road (JN Marg)", note: "Open to army and rescue vehicles, civilians stopped at Tsomgo.", status: "SINGLE-LANE OPEN", ver: 24, by: "Traffic police", reports: 3 },
+      { id: "k4", name: "NH-10 · Teesta Bazaar Bridge", note: "Bridge intact. Approach road open one way.", status: "OPEN", ver: 41, by: "Local resident", reports: 2 },
+    ],
+    triage: [
+      { id: "R-1032", type: "TOURIST", people: 9, med: false, flags: ["ELDER"], lang: "HI", loc: "27.30N,88.58E", ts: t(6), status: "NEW", source: "SOS" },
+      { id: "R-1028", type: "MED", people: 2, med: true, loc: "27.17N,88.52E", ts: t(14), status: "DISPATCHED", source: "SOS" },
+      { id: "R-1022", type: "SLIDE", people: 3, med: false, loc: "27.20N,88.55E", ts: t(33), status: "ON SCENE", source: "SOS" },
+    ],
+  },
+  {
+    id: "hfl", name: "Dima Hasao / Haflong (Rail & Road Isolation)", short: "Haflong", code: "HFL", state: "Assam",
+    coords: { lat: 25.17, lon: 93.02, txt: "25.17N,93.02E" }, level: "ORANGE", hazard: "Rail and road washout",
+    rain24: 164, rain: [3, 5, 6, 9, 11, 16, 21, 24, 30, 28, 33, 37],
+    gauge: { label: "Jatinga river", now: "1.8", danger: "2.2", unit: "m" },
+    advisory: "Washouts on the Lumding–Badarpur hill section and slips on NH-27 have isolated Haflong. Trains are held at Maibang and Lumding. Food and medicine stocks at Haflong market are for about 4 days.",
+    offline: ["RAIL LUMDING-BADARPUR WASHED OUT. TRAINS HELD AT MAIBANG.", "NH-27 LUMDING-MAIBANG BLOCKED. HAFLONG ISOLATED.", "HELIPAD AT HAFLONG LAKE FOR AIRDROP. MARKET STOCK ~4 DAYS."],
+    alert: { title: "ISOLATION ALERT · DIMA HASAO", body: "Track washout reported between Haflong and Jatinga. Passengers held at Haflong station should move to the school camp. Avoid walking on rail tracks.", eta: "Repair gang ETA 6 h", effect: { chokeId: "h3", status: "LANDSLIDE BLOCKED", note: "Auto-advisory: embankment slip on the rail line near Jatinga." } },
+    camps: [
+      { id: "hc1", name: "Haflong Govt. Higher Secondary Camp", kind: "camp", area: "Haflong", km: 1.8, beds: [124, 200], med: [3, 8], water: [5, 12] },
+      { id: "hc2", name: "Haflong Railway Station Relief Point", kind: "camp", area: "Station", km: 0.9, beds: [97, 120], med: [2, 4], water: [3, 6] },
+      { id: "hc3", name: "Maibang Community Camp", kind: "camp", area: "Maibang", km: 38.5, beds: [44, 90], med: [1, 4], water: [2, 6] },
+      { id: "hr1", name: "Haflong Lake Helipad Drop Point", kind: "rescue", area: "Haflong Lake", km: 2.2, beds: [8, 20], med: [1, 3], water: [1, 3] },
+    ],
+    chokes: [
+      { id: "h1", name: "NH-27 · Lumding to Maibang", note: "Two slips and a washed culvert. Alternate route not available.", status: "LANDSLIDE BLOCKED", ver: 18, by: "PWD official", reports: 7 },
+      { id: "h2", name: "Haflong–Silchar Road (NH-27)", note: "Open for 4x4 only. Crossing a stream at Km 212.", status: "SINGLE-LANE OPEN", ver: 27, by: "Driver", reports: 3 },
+      { id: "h3", name: "Rail · Lumding–Badarpur Hill Section", note: "Track hanging at three spots. All trains terminated.", status: "SUBMERGED", ver: 52, by: "Railway staff", reports: 5 },
+      { id: "h4", name: "Haflong–Jatinga Road", note: "Open, slow traffic. Water on the road at the bridge.", status: "OPEN", ver: 36, by: "Volunteer", reports: 1 },
+    ],
+    triage: [
+      { id: "R-1030", type: "MED", people: 1, med: true, loc: "25.18N,93.01E", ts: t(8), status: "NEW", source: "SOS" },
+      { id: "R-1025", type: "FLOOD", people: 7, med: false, loc: "25.15N,93.05E", ts: t(22), status: "DISPATCHED", source: "SOS" },
+    ],
+  },
+];
+
+const STATUS = {
+  "SUBMERGED": { tone: "text-red-300 bg-red-500/15 border-red-500/40", dot: "bg-red-400", rank: 0 },
+  "LANDSLIDE BLOCKED": { tone: "text-orange-300 bg-orange-500/15 border-orange-500/40", dot: "bg-orange-400", rank: 1 },
+  "FERRY HALTED": { tone: "text-fuchsia-300 bg-fuchsia-500/15 border-fuchsia-500/40", dot: "bg-fuchsia-400", rank: 2 },
+  "SINGLE-LANE OPEN": { tone: "text-amber-300 bg-amber-500/15 border-amber-500/40", dot: "bg-amber-400", rank: 3 },
+  "OPEN": { tone: "text-emerald-300 bg-emerald-500/15 border-emerald-500/40", dot: "bg-emerald-400", rank: 4 },
+};
+const STATUS_LIST = Object.keys(STATUS);
+
+const TYPES = [
+  { id: "FLOOD", label: "Flood Trapped", icon: "droplets" },
+  { id: "SLIDE", label: "Landslide", icon: "mountain" },
+  { id: "MED", label: "Medical Emergency", icon: "kit" },
+  { id: "TOURIST", label: "Stranded Tourist", icon: "pin" },
+];
+const TYPE_LABEL = { FLOOD: "Flood trapped", SLIDE: "Landslide", MED: "Medical", TOURIST: "Stranded tourist", PICKUP: "Pickup / shelter" };
+
+const LANGS = [
+  { id: "en", label: "English", native: "English", tag: "EN" },
+  { id: "as", label: "Assamese", native: "অসমীয়া", tag: "AS" },
+  { id: "kh", label: "Khasi", native: "Khasi", tag: "KH" },
+  { id: "bn", label: "Bengali", native: "বাংলা", tag: "BN" },
+  { id: "hi", label: "Hindi", native: "हिन्दी", tag: "HI" },
+];
+const PHRASE = {
+  en: { head: "EMERGENCY — NEED HELP", FLOOD: "I am trapped by floodwater. Please send a rescue boat.", SLIDE: "A landslide has hit us. We are trapped and need rescue.", MED: "Medical emergency. Please send an ambulance now.", TOURIST: "I am a stranded tourist and need help to reach safety.", ppl: "People with me", loc: "My location", med: "Medical help needed", show: "Show this card to rescuers" },
+  as: { head: "জৰুৰীকালীন — সহায় লাগে", FLOOD: "মই বানপানীত আটকা পৰিছোঁ। অনুগ্ৰহ কৰি সোনকালে উদ্ধাৰ কৰক।", SLIDE: "ভূমিস্খলন হৈছে। আমি আটকা পৰিছোঁ, উদ্ধাৰ লাগে।", MED: "জৰুৰীকালীন চিকিৎসা প্ৰয়োজন। অনুগ্ৰহ কৰি এম্বুলেন্স পঠিয়াওক।", TOURIST: "মই এজন পৰ্যটক, আটকা পৰিছোঁ। সহায় লাগে।", ppl: "মোৰ লগত মানুহ", loc: "মোৰ অৱস্থান", med: "চিকিৎসা সহায় লাগে", show: "এই কাৰ্ড উদ্ধাৰকাৰীক দেখুৱাওক" },
+  kh: { head: "ÏARAP — EMERGENCY", FLOOD: "Ïarap! Flood — nga la kynjah. Please send a rescue boat.", SLIDE: "Ïarap! Landslide la ïoh ïa ngi. Ngi kynjah, need rescue.", MED: "Ïarap! Medical emergency. Please send an ambulance now.", TOURIST: "Ïarap! Nga dei tourist, nga la kynjah. Need help.", ppl: "Katno ngut", loc: "Ka jaka", med: "Medical help needed", show: "Show this card to rescuers" },
+  bn: { head: "জরুরি অবস্থা — সাহায্য চাই", FLOOD: "আমি বন্যায় আটকে পড়েছি। দয়া করে দ্রুত উদ্ধার করুন।", SLIDE: "ভূমিধস হয়েছে। আমরা আটকে পড়েছি, উদ্ধার চাই।", MED: "জরুরি চিকিৎসা প্রয়োজন। দয়া করে অ্যাম্বুলেন্স পাঠান।", TOURIST: "আমি একজন পর্যটক, আটকে পড়েছি। সাহায্য চাই।", ppl: "আমার সঙ্গে মানুষ", loc: "আমার অবস্থান", med: "চিকিৎসা সাহায্য দরকার", show: "এই কার্ড উদ্ধারকারীদের দেখান" },
+  hi: { head: "आपातकाल — मदद चाहिए", FLOOD: "मैं बाढ़ में फँस गया हूँ। कृपया जल्दी बचाव करें।", SLIDE: "भूस्खलन हुआ है। हम फँसे हैं, बचाव चाहिए।", MED: "आपातकालीन चिकित्सा की ज़रूरत है। कृपया एम्बुलेंस भेजें।", TOURIST: "मैं एक पर्यटक हूँ और फँस गया हूँ। मदद चाहिए।", ppl: "मेरे साथ लोग", loc: "मेरा स्थान", med: "चिकित्सा सहायता चाहिए", show: "यह कार्ड बचावकर्मियों को दिखाएँ" },
+};
+
+const HELPLINES = [
+  { n: "112", l: "National emergency" },
+  { n: "108", l: "Ambulance" },
+  { n: "1070", l: "State disaster control room" },
+  { n: "1077", l: "District control room" },
+  { n: "1363", l: "Tourist helpline" },
+];
+
+const FLAGS = [
+  { id: "CHILD", label: "Infant / Child" },
+  { id: "ELDER", label: "Elderly" },
+  { id: "PREG", label: "Pregnant" },
+  { id: "INSULIN", label: "Medical / Insulin" },
+  { id: "BOAT", label: "Needs Boat" },
+];
+const FILTERS = [["all", "All Hubs"], ["power", "24x7 Power & Charging"], ["boat", "Boat Rescue Ready"], ["med", "Medical Team On-Site"]];
+const FEAT_LABEL = { power: "24x7 power", boat: "Boat ready", med: "Medical team" };
+const CAMP_FEATS = {
+  gc1: ["power", "med"], gc2: ["power", "med"], gc3: ["power"], gb1: ["boat"], gb2: ["boat", "med", "power"],
+  sc1: ["power", "med"], sc2: ["power"], sc3: [], sr1: ["boat", "med"],
+  kc1: ["power", "med"], kc2: ["power"], kc3: ["med"], kr1: ["med"],
+  hc1: ["power"], hc2: ["power", "med"], hc3: [], hr1: ["med"],
+};
+const GUIDE = {
+  ghy: [
+    "NEEV safety guide for the Guwahati flood alert.",
+    "Step one. Move to the highest floor of your building, or go to a relief camp. Cotton University and Sarusajai Stadium have space.",
+    "Step two. Switch off the main power and gas before water enters your home.",
+    "Step three. Never walk or drive through moving water. Fifteen centimetres of fast water can knock an adult off their feet.",
+    "Step four. Put your phone on battery saver. If you are trapped, send the S O S text from this app.",
+    "Step five. If you cannot leave, go to the roof and stay visible. Boat teams are working from Anil Nagar and Pandu port. Call one one two or one zero seven zero.",
+  ],
+  shl: [
+    "NEEV safety guide for the East Khasi Hills cloudburst alert.",
+    "Step one. If your home is below a cut slope, leave now and go to Polo Ground or Don Bosco Hall.",
+    "Step two. Watch for warning signs: new cracks in the ground, tilting trees or poles, muddy streams, or a rumbling sound. If you notice them, move away at once.",
+    "Step three. If a slide starts, move sideways out of its path. Do not run downhill along it.",
+    "Step four. Do not travel on N H six or other hill roads after dark. Rockfall is hard to see.",
+    "Step five. Keep your phone on battery saver, and send the S O S text if you are trapped. Call one one two or one zero seven zero.",
+  ],
+  gtk: [
+    "NEEV safety guide for the Sikkim N H ten alert.",
+    "Step one. N H ten is blocked. Do not try to cross slip zones, especially at night.",
+    "Step two. If you are a tourist, stay in your hotel or go to Paljor Stadium. Stranded vehicles should halt at the Rangpo transit camp.",
+    "Step three. Keep away from the Teesta river bank and from hillsides above the road.",
+    "Step four. If you hear rumbling or see cracks, move sideways from the slope and go to open ground.",
+    "Step five. Save phone battery, and send the S O S text with your location if you need help. The Singtam helipad is reserved for medical airlift. Call one one two or one zero seven zero.",
+  ],
+  hfl: [
+    "NEEV safety guide for the Haflong isolation alert.",
+    "Step one. Do not walk on rail tracks. The track is damaged in several places, and slips can come without warning.",
+    "Step two. Passengers should go to the Haflong school camp or the station relief point.",
+    "Step three. Do not drive on N H twenty seven past Maibang. Stay where you are until the road is reported open.",
+    "Step four. Ration food and clean water. Market stock is expected to last about four days.",
+    "Step five. Send the S O S text if you need help. The Haflong Lake helipad is the drop point for supplies. Call one one two or one zero seven zero.",
+  ],
+};
+
+/* ---------- Helpers ---------- */
+const ago = (ts, short) => {
+  const m = Math.max(0, Math.round((Date.now() - ts) / 60000));
+  if (m < 1) return short ? "0m" : "just now";
+  if (m < 60) return short ? m + "m" : m + " min ago";
+  const h = Math.floor(m / 60);
+  return short ? h + "h" + (m % 60) + "m" : h + " h " + (m % 60) + " min ago";
+};
+const hhmm = (d = new Date()) => String(d.getHours()).padStart(2, "0") + String(d.getMinutes()).padStart(2, "0");
+/* Payload: SOS|REGION|LAT,LON|TYPE|nPPL|FLAGS(optional)|LANG  e.g. SOS|GHY|26.14N,91.73E|FLOOD|4PPL|INSULIN,BOAT|AS */
+const buildSms = ({ code, loc, type, people, med, flags = [], lang = "EN" }) => {
+  const f = (med && type !== "MED" ? ["MED"] : []).concat(flags);
+  return ["SOS", code, loc, type, people + "PPL"].concat(f.length ? [f.join(",")] : []).concat([lang]).join("|");
+};
+const priorityOf = (it) => {
+  const f = it.flags || [];
+  if (it.med || it.type === "MED" || it.type === "SLIDE" || f.includes("INSULIN") || f.includes("PREG") || f.includes("CHILD")) return "CRITICAL";
+  if (it.type === "PICKUP") return "MEDIUM";
+  return it.people >= 4 || f.length ? "HIGH" : "MEDIUM";
+};
+
+/* ---------- Offline QR encoder (byte mode, EC level M or L, versions 1-6, no dependencies) ---------- */
+const QR_SPEC = {
+  L: { bits: 1, v: [null, [19, 7, 1], [34, 10, 1], [55, 15, 1], [80, 20, 1], [108, 26, 1], [136, 18, 2]] },
+  M: { bits: 0, v: [null, [16, 10, 1], [28, 16, 1], [44, 26, 1], [64, 18, 2], [86, 24, 2], [108, 16, 4]] },
+};
+function qrGfMul(x, y) {
+  let z = 0;
+  for (let i = 7; i >= 0; i--) { z = (z << 1) ^ ((z >>> 7) * 0x11d); z ^= ((y >>> i) & 1) * x; }
+  return z;
+}
+function qrRsGen(deg) {
+  const r = new Array(deg).fill(0); r[deg - 1] = 1;
+  let root = 1;
+  for (let i = 0; i < deg; i++) {
+    for (let j = 0; j < r.length; j++) { r[j] = qrGfMul(r[j], root); if (j + 1 < r.length) r[j] ^= r[j + 1]; }
+    root = qrGfMul(root, 2);
+  }
+  return r;
+}
+function qrRsRem(data, gen) {
+  const r = new Array(gen.length).fill(0);
+  for (const b of data) {
+    const f = b ^ r.shift(); r.push(0);
+    for (let i = 0; i < gen.length; i++) r[i] ^= qrGfMul(gen[i], f);
+  }
+  return r;
+}
+function makeQR(text) {
+  const bytes = Array.from(new TextEncoder().encode(text));
+  let lvl = null, ver = 0;
+  outer: for (const key of ["M", "L"]) for (let v = 1; v <= 6; v++) {
+    if (bytes.length <= QR_SPEC[key].v[v][0] - 2) { lvl = key; ver = v; break outer; }
+  }
+  if (!lvl) return null;
+  const [dataCw, ecLen, nBlocks] = QR_SPEC[lvl].v[ver];
+  const bits = [];
+  const put = (val, len) => { for (let i = len - 1; i >= 0; i--) bits.push((val >>> i) & 1); };
+  put(4, 4); put(bytes.length, 8); bytes.forEach((b) => put(b, 8));
+  const capBits = dataCw * 8;
+  put(0, Math.min(4, capBits - bits.length));
+  while (bits.length % 8) bits.push(0);
+  for (let pad = 0xec; bits.length < capBits; pad ^= 0xec ^ 0x11) put(pad, 8);
+  const data = [];
+  for (let i = 0; i < bits.length; i += 8) data.push(parseInt(bits.slice(i, i + 8).join(""), 2));
+  const per = dataCw / nBlocks, gen = qrRsGen(ecLen), blocks = [], ecs = [];
+  for (let b = 0; b < nBlocks; b++) { const d = data.slice(b * per, (b + 1) * per); blocks.push(d); ecs.push(qrRsRem(d, gen)); }
+  const all = [];
+  for (let i = 0; i < per; i++) blocks.forEach((d) => all.push(d[i]));
+  for (let i = 0; i < ecLen; i++) ecs.forEach((e) => all.push(e[i]));
+
+  const size = 17 + 4 * ver;
+  const m = Array.from({ length: size }, () => new Array(size).fill(false));
+  const fn = Array.from({ length: size }, () => new Array(size).fill(false));
+  const setFn = (x, y, dark) => { m[y][x] = dark; fn[y][x] = true; };
+  for (let i = 0; i < size; i++) { setFn(6, i, i % 2 === 0); setFn(i, 6, i % 2 === 0); }
+  const finder = (cx, cy) => {
+    for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
+      const d = Math.max(Math.abs(dx), Math.abs(dy)), x = cx + dx, y = cy + dy;
+      if (x >= 0 && x < size && y >= 0 && y < size) setFn(x, y, d !== 2 && d !== 4);
+    }
+  };
+  finder(3, 3); finder(size - 4, 3); finder(3, size - 4);
+  if (ver >= 2) {
+    const c = size - 7;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) setFn(c + dx, c + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1);
+  }
+  const drawFormat = (mask) => {
+    const d = (QR_SPEC[lvl].bits << 3) | mask;
+    let rem = d;
+    for (let i = 0; i < 10; i++) rem = (rem << 1) ^ ((rem >>> 9) * 0x537);
+    const fb = ((d << 10) | rem) ^ 0x5412;
+    const g = (i) => ((fb >>> i) & 1) !== 0;
+    for (let i = 0; i <= 5; i++) setFn(8, i, g(i));
+    setFn(8, 7, g(6)); setFn(8, 8, g(7)); setFn(7, 8, g(8));
+    for (let i = 9; i < 15; i++) setFn(14 - i, 8, g(i));
+    for (let i = 0; i < 8; i++) setFn(size - 1 - i, 8, g(i));
+    for (let i = 8; i < 15; i++) setFn(8, size - 15 + i, g(i));
+    setFn(8, size - 8, true);
+  };
+  drawFormat(0);
+
+  let k = 0;
+  for (let right = size - 1; right >= 1; right -= 2) {
+    if (right === 6) right = 5;
+    for (let vert = 0; vert < size; vert++) for (let j = 0; j < 2; j++) {
+      const x = right - j, up = ((right + 1) & 2) === 0, y = up ? size - 1 - vert : vert;
+      if (!fn[y][x] && k < all.length * 8) { m[y][x] = ((all[k >>> 3] >>> (7 - (k & 7))) & 1) !== 0; k++; }
+    }
+  }
+
+  const maskFn = [
+    (x, y) => (x + y) % 2 === 0, (x, y) => y % 2 === 0, (x, y) => x % 3 === 0, (x, y) => (x + y) % 3 === 0,
+    (x, y) => (Math.floor(x / 3) + Math.floor(y / 2)) % 2 === 0, (x, y) => ((x * y) % 2) + ((x * y) % 3) === 0,
+    (x, y) => (((x * y) % 2) + ((x * y) % 3)) % 2 === 0, (x, y) => ((((x + y) % 2) + ((x * y) % 3)) % 2) === 0,
+  ];
+  const apply = (mask) => { for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) if (!fn[y][x] && maskFn[mask](x, y)) m[y][x] = !m[y][x]; };
+  const penalty = () => {
+    let p = 0;
+    const lines = [];
+    for (let y = 0; y < size; y++) lines.push(m[y].map(Number));
+    for (let x = 0; x < size; x++) lines.push(m.map((r) => Number(r[x])));
+    for (const ln of lines) {
+      let run = 1;
+      for (let i = 1; i < size; i++) { if (ln[i] === ln[i - 1]) run++; else { if (run >= 5) p += run - 2; run = 1; } }
+      if (run >= 5) p += run - 2;
+      const s = ln.join("");
+      for (let i = 0; i + 11 <= size; i++) { const w = s.substr(i, 11); if (w === "10111010000" || w === "00001011101") p += 40; }
+    }
+    for (let y = 0; y < size - 1; y++) for (let x = 0; x < size - 1; x++) {
+      const c = m[y][x];
+      if (c === m[y][x + 1] && c === m[y + 1][x] && c === m[y + 1][x + 1]) p += 3;
+    }
+    let dark = 0;
+    m.forEach((r) => r.forEach((c) => { if (c) dark++; }));
+    const total = size * size;
+    p += (Math.ceil(Math.abs(dark * 20 - total * 10) / total) - 1) * 10;
+    return p;
+  };
+  let best = 0, bestP = Infinity;
+  for (let mk = 0; mk < 8; mk++) { apply(mk); drawFormat(mk); const p = penalty(); if (p < bestP) { bestP = p; best = mk; } apply(mk); }
+  apply(best); drawFormat(best);
+  return { size, modules: m, version: ver, level: lvl };
+}
+
+function useSpeech(region) {
+  const supported = typeof window !== "undefined" && "speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined";
+  const [speaking, setSpeaking] = useState(false);
+  const run = useRef(0);
+  const stop = useCallback(() => {
+    run.current++;
+    try { window.speechSynthesis.cancel(); } catch (e) {}
+    setSpeaking(false);
+  }, []);
+  const listen = useCallback(() => {
+    if (!supported) return;
+    try {
+      const synth = window.speechSynthesis;
+      synth.cancel();
+      const mine = ++run.current;
+      const lines = GUIDE[region.id];
+      setSpeaking(true);
+      lines.forEach((text, i) => {
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = "en-IN"; u.rate = 0.9; u.pitch = 1;
+        const finish = () => { if (i === lines.length - 1 && run.current === mine) setSpeaking(false); };
+        u.onend = finish; u.onerror = finish;
+        synth.speak(u);
+      });
+    } catch (e) { setSpeaking(false); }
+  }, [supported, region.id]);
+  useEffect(() => { stop(); }, [region.id, stop]);
+  useEffect(() => () => { try { window.speechSynthesis.cancel(); } catch (e) {} }, []);
+  return { supported, speaking, listen, stop };
+}
+const PRANK = { CRITICAL: 0, HIGH: 1, MEDIUM: 2 };
+const PTONE = { CRITICAL: "text-red-300 bg-red-500/15 border-red-500/40", HIGH: "text-amber-300 bg-amber-500/15 border-amber-500/40", MEDIUM: "text-sky-300 bg-sky-500/15 border-sky-500/40" };
+const NEXT = { NEW: ["DISPATCHED", "Dispatch team"], DISPATCHED: ["ON SCENE", "Mark on scene"], "ON SCENE": ["RESOLVED", "Mark resolved"] };
+const tbar = (free, total, w = 10) => { const n = Math.round((free / total) * w); return "[" + "#".repeat(n) + ".".repeat(w - n) + "]"; };
+
+let audioCtx = null;
+function playSiren() {
+  try {
+    const A = window.AudioContext || window.webkitAudioContext;
+    audioCtx = audioCtx || new A();
+    const ctx = audioCtx;
+    if (ctx.state === "suspended") ctx.resume();
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = "sawtooth"; g.gain.value = 0.04;
+    o.connect(g); g.connect(ctx.destination);
+    const t0 = ctx.currentTime;
+    for (let i = 0; i < 6; i++) o.frequency.setValueAtTime(i % 2 ? 660 : 880, t0 + i * 0.35);
+    o.start(t0); o.stop(t0 + 2.1);
+  } catch (e) {}
+  try { if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]); } catch (e) {}
+}
+
+async function copyText(text, inputEl) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+  try { if (inputEl) { inputEl.focus(); inputEl.select(); return document.execCommand("copy"); } } catch (e) {}
+  return false;
+}
+
+/* ---------- Small UI parts ---------- */
+function Meter({ label, icon, used, total, unit }) {
+  const free = total - used;
+  const freePct = Math.round((free / total) * 100);
+  const tone = freePct < 15 ? "bg-red-500" : freePct < 40 ? "bg-amber-400" : "bg-emerald-400";
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs text-[var(--muted)]">
+        <span className="flex items-center gap-1.5"><Icon name={icon} size={13} />{label}</span>
+        <span className="tnum text-[var(--text)]">{free} <span className="text-[var(--muted)]">{unit} free of {total}</span></span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-white/10" role="img" aria-label={label + " " + freePct + "% free"}>
+        <div className={"h-full rounded-full " + tone} style={{ width: freePct + "%" }} />
+      </div>
+    </div>
+  );
+}
+
+function RainChart({ data }) {
+  const max = Math.max(...data, 10);
+  return (
+    <svg viewBox="0 0 252 92" className="w-full max-w-[300px]" role="img" aria-label="Rainfall per hour, last 12 hours">
+      <text x="0" y="9" fontSize="9" fill="var(--muted)">mm/h · max {max}</text>
+      {[0.5, 1].map((f) => <line key={f} x1="0" x2="252" y1={72 - 56 * f} y2={72 - 56 * f} stroke="var(--line)" strokeWidth="1" />)}
+      {data.map((v, i) => {
+        const h = (v / max) * 56;
+        const last = i === data.length - 1;
+        return <rect key={i} x={i * 21 + 2} y={72 - h} width="15" height={h} rx="2" fill={last ? "var(--teal)" : "#2d5f68"} />;
+      })}
+      <text x="2" y="86" fontSize="9" fill="var(--muted)">-12 h</text>
+      <text x="250" y="86" fontSize="9" textAnchor="end" fill="var(--muted)">now</text>
+    </svg>
+  );
+}
+
+function Toasts({ items, term }) {
+  return (
+    <div className="pointer-events-none fixed left-0 right-0 z-[80] flex flex-col items-center gap-2 px-4" style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 84px)" }} aria-live="polite">
+      {items.map((x) => (
+        <div key={x.id} className={term ? "border border-amber-400 bg-black px-3 py-2 font-mono text-xs text-amber-300" : "rounded-md border border-[var(--line)] bg-[var(--panel-2)] px-3.5 py-2 text-sm shadow-xl"}>
+          {term ? "> " + x.msg : x.msg}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ---------- Alert banner ---------- */
+function ListenButton({ speech, term, className = "" }) {
+  if (!speech || !speech.supported) return null;
+  const on = speech.speaking;
+  const click = on ? speech.stop : speech.listen;
+  if (term) return <button onClick={click} aria-pressed={on} className="border border-amber-400 px-2 py-1">[{on ? "STOP AUDIO" : "LISTEN"}]</button>;
+  return (
+    <button onClick={click} aria-pressed={on} className={"flex items-center gap-1.5 " + className}>
+      <Icon name={on ? "stop" : "volume"} size={15} />{on ? "Stop audio" : "Listen to Safety Guide"}
+    </button>
+  );
+}
+
+function AlertBanner({ alert, term, onAck, onRoutes, speech }) {
+  if (!alert) return null;
+  if (term) {
+    return (
+      <div role="alert" className="mb-3 border-2 border-amber-400 p-3 font-mono text-[13px]">
+        <div className="blink font-semibold">!! INCOMING ALERT !! (SIMULATED)</div>
+        <div className="mt-1 font-semibold">{alert.title}</div>
+        <div className="mt-1">{alert.body}</div>
+        <div className="mt-1">{alert.eta}</div>
+        <div className="mt-2 flex gap-3"><ListenButton speech={speech} term /><button className="border border-amber-400 px-2 py-1" onClick={onRoutes}>[ROADS]</button><button className="border border-amber-400 px-2 py-1" onClick={onAck}>[ACK]</button></div>
+      </div>
+    );
+  }
+  return (
+    <div role="alert" className="pulse-sos mb-4 rounded-lg border border-red-500/60 bg-gradient-to-r from-red-950 to-[#2a0f12] p-4">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-500 text-white"><Icon name="siren" size={20} /></div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-display text-base font-semibold tracking-wide text-red-100">{alert.title}</span>
+            <span className="rounded border border-red-300/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-red-200">Simulated demo alert</span>
+          </div>
+          <p className="mt-1 max-w-3xl text-sm text-red-100/90">{alert.body}</p>
+          <p className="mt-1 flex items-center gap-1.5 text-xs text-red-200/80"><Icon name="clock" size={13} />{alert.eta} · received {ago(alert.ts)}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <ListenButton speech={speech} className="rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-red-900 hover:bg-red-100" />
+          <button onClick={onRoutes} className="rounded-md bg-red-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-400">View evacuation routes</button>
+          <button onClick={onAck} className="rounded-md border border-red-300/40 px-3 py-1.5 text-sm text-red-100 hover:bg-white/10">Acknowledge</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Camps ---------- */
+const KIND = { camp: { label: "Relief camp", icon: "tent", act: "Reserve spot" }, boat: { label: "Boat point", icon: "ship", act: "Request pickup" }, rescue: { label: "Rescue point", icon: "radio", act: "Request pickup" } };
+
+function HubFilters({ camps, filter, setFilter }) {
+  const count = (id) => (id === "all" ? camps.length : camps.filter((c) => (c.feats || []).includes(id)).length);
+  const icons = { all: "tent", power: "zap", boat: "ship", med: "kit" };
+  return (
+    <div className="scroll-x mb-3">
+      <div className="flex min-w-max gap-2" role="group" aria-label="Filter relief hubs">
+        {FILTERS.map(([id, l]) => (
+          <button key={id} onClick={() => setFilter(id)} aria-pressed={filter === id}
+            className={"flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm " + (filter === id ? "border-[var(--teal)] bg-[var(--teal)] font-semibold text-[#06201e]" : "border-[var(--line)] bg-[var(--panel)] text-[var(--muted)] hover:text-[var(--text)]")}>
+            <Icon name={icons[id]} size={14} />{l}<span className="tnum text-xs opacity-80">{count(id)}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CampsTab({ camps, onReserve, filter, setFilter }) {
+  const shown = camps.filter((c) => filter === "all" || (c.feats || []).includes(filter));
+  return (
+    <div>
+    <HubFilters camps={camps} filter={filter} setFilter={setFilter} />
+    {shown.length === 0 && <p className="rounded-lg border border-dashed border-[var(--line)] p-6 text-center text-sm text-[var(--muted)]">No hub in this region matches that filter right now. Choose All Hubs, or call 112 or 1070.</p>}
+    <div className="grid gap-3 md:grid-cols-2">
+      {shown.map((c) => {
+        const k = KIND[c.kind];
+        const free = c.beds[1] - c.beds[0];
+        const seat = c.kind === "camp" ? "Beds" : "Seats";
+        return (
+          <article key={c.id} className="flex min-w-0 flex-col gap-3 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-4">
+            <header className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="mb-1 flex items-center gap-1.5 text-xs uppercase tracking-wider text-[var(--teal)]"><Icon name={k.icon} size={13} />{k.label}</div>
+                <h3 className="font-display text-[17px] font-semibold leading-snug">{c.name}</h3>
+                <p className="mt-0.5 text-xs text-[var(--muted)]">{c.area}</p>
+                {(c.feats || []).length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {c.feats.map((f) => <span key={f} className="rounded border border-[var(--line)] px-1.5 py-0.5 text-[11px] text-[var(--muted)]">{FEAT_LABEL[f]}</span>)}
+                  </div>
+                )}
+              </div>
+              <div className="shrink-0 text-right">
+                <div className="tnum font-display text-xl font-semibold">{c.km.toFixed(1)}<span className="ml-0.5 text-sm text-[var(--muted)]">km</span></div>
+                <div className="text-[11px] text-[var(--muted)]">from you</div>
+              </div>
+            </header>
+            <div className="grid gap-2.5">
+              <Meter label={seat} icon="bed" used={c.beds[0]} total={c.beds[1]} unit={seat.toLowerCase()} />
+              <Meter label="Medical kits" icon="kit" used={c.med[0]} total={c.med[1]} unit="kits" />
+              <Meter label="Clean water" icon="droplets" used={c.water[0]} total={c.water[1]} unit="kL" />
+            </div>
+            <div className="mt-auto flex items-center justify-between gap-3 pt-1">
+              {c.reserved ? (
+                <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300"><Icon name="check" size={15} />Confirmed · <span className="font-mono">{c.reserved}</span></div>
+              ) : (
+                <button disabled={free <= 0} onClick={() => onReserve(c)} className="rounded-md bg-[var(--teal)] px-3.5 py-2 text-sm font-semibold text-[#06201e] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">
+                  {free <= 0 ? "Full" : k.act}
+                </button>
+              )}
+              <span className="text-xs text-[var(--muted)]">{c.reserved ? "Responders notified" : free <= 0 ? "No capacity left" : "Holds your spot for 2 h"}</span>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+    </div>
+  );
+}
+
+/* ---------- Chokepoints ---------- */
+function StatusBadge({ status }) {
+  const s = STATUS[status] || STATUS["OPEN"];
+  return <span className={"inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-[11px] font-semibold tracking-wide " + s.tone}><span className={"h-1.5 w-1.5 rounded-full " + s.dot} />{status}</span>;
+}
+
+function ChokesTab({ chokes, log, onReport }) {
+  const sorted = [...chokes].sort((a, b) => STATUS[a.status].rank - STATUS[b.status].rank);
+  return (
+    <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
+      <div className="grid gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm text-[var(--muted)]">Lifelines sorted by severity. Updates from the ground appear here instantly.</p>
+          <button onClick={onReport} className="flex shrink-0 items-center gap-1.5 rounded-md bg-[var(--teal)] px-3 py-2 text-sm font-semibold text-[#06201e] hover:brightness-110"><Icon name="plus" size={15} />Report ground update</button>
+        </div>
+        {sorted.map((c) => (
+          <article key={c.id} className="rounded-lg border border-[var(--line)] bg-[var(--panel)] p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <h3 className="font-display text-base font-semibold">{c.name}</h3>
+              <StatusBadge status={c.status} />
+            </div>
+            <p className="mt-1.5 text-sm text-[var(--muted)]">{c.note}</p>
+            <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--muted)]">
+              <span className="flex items-center gap-1.5"><Icon name="clock" size={13} />Last verified {ago(c.ts)}</span>
+              <span>by {c.by}</span>
+              <span className="tnum">{c.reports} reports today</span>
+            </p>
+          </article>
+        ))}
+      </div>
+      <aside className="h-fit rounded-lg border border-[var(--line)] bg-[var(--panel)] p-4">
+        <h3 className="font-display text-sm font-semibold uppercase tracking-wider text-[var(--muted)]">Ground updates</h3>
+        {log.length === 0 ? <p className="mt-3 text-sm text-[var(--muted)]">No new reports yet. Use “Report ground update” to add the first one.</p> : (
+          <ul className="mt-3 grid gap-3">
+            {log.slice(0, 8).map((l) => (
+              <li key={l.id} className="border-l-2 border-[var(--teal)] pl-3">
+                <div className="flex items-center justify-between gap-2 text-xs text-[var(--muted)]"><span>{l.by}</span><span>{ago(l.ts)}</span></div>
+                <div className="mt-0.5 text-sm font-medium">{l.name}</div>
+                <div className="mt-1"><StatusBadge status={l.status} /></div>
+                {l.note && <p className="mt-1 text-xs text-[var(--muted)]">{l.note}</p>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </aside>
+    </div>
+  );
+}
+
+function Modal({ children, onClose, term, label, wide }) {
+  useEffect(() => {
+    const k = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/70 p-0 sm:items-center sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()} role="dialog" aria-modal="true" aria-label={label}>
+      <div className={"max-h-[92vh] w-full overflow-y-auto " + (wide ? "sm:max-w-3xl " : "sm:max-w-md ") + (term ? "border-2 border-amber-400 bg-black font-mono text-amber-300" : "rounded-t-xl border border-[var(--line)] bg-[var(--panel)] sm:rounded-xl")} style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>{children}</div>
+    </div>
+  );
+}
+
+function ReportModal({ chokes, term, onClose, onSubmit }) {
+  const [target, setTarget] = useState(chokes[0] ? chokes[0].id : "__new");
+  const [newName, setNewName] = useState("");
+  const [status, setStatus] = useState("SINGLE-LANE OPEN");
+  const [note, setNote] = useState("");
+  const [by, setBy] = useState("Volunteer");
+  const valid = target !== "__new" || newName.trim().length > 2;
+  const field = term ? "w-full border border-amber-400 bg-black px-2 py-2 text-amber-300" : "w-full rounded-md border border-[var(--line)] bg-[var(--ink)] px-3 py-2";
+  const lab = term ? "mb-1 block text-xs uppercase" : "mb-1 block text-xs font-medium text-[var(--muted)]";
+  return (
+    <Modal onClose={onClose} term={term} label="Report ground update">
+      <form onSubmit={(e) => { e.preventDefault(); if (valid) onSubmit({ target, newName: newName.trim(), status, note: note.trim(), by }); }} className="grid gap-3 p-4">
+        <div className="flex items-center justify-between">
+          <h2 className={term ? "font-semibold" : "font-display text-lg font-semibold"}>{term ? "REPORT GROUND UPDATE" : "Report ground update"}</h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="p-1"><Icon name="x" size={18} /></button>
+        </div>
+        <div><label htmlFor="rp-target" className={lab}>Location</label>
+          <select id="rp-target" value={target} onChange={(e) => setTarget(e.target.value)} className={field}>
+            {chokes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            <option value="__new">+ Another road or crossing…</option>
+          </select></div>
+        {target === "__new" && <div><label htmlFor="rp-new" className={lab}>Name of road or crossing</label><input id="rp-new" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Lalmati Bridge approach" className={field} /></div>}
+        <div><label htmlFor="rp-status" className={lab}>What do you see?</label>
+          <select id="rp-status" value={status} onChange={(e) => setStatus(e.target.value)} className={field}>{STATUS_LIST.map((s) => <option key={s}>{s}</option>)}</select></div>
+        <div><label htmlFor="rp-note" className={lab}>Details (depth, vehicles passing, hazards)</label>
+          <textarea id="rp-note" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Water about 40 cm, trucks only." className={field} /></div>
+        <div><label htmlFor="rp-by" className={lab}>You are a</label>
+          <select id="rp-by" value={by} onChange={(e) => setBy(e.target.value)} className={field}>{["Volunteer", "Local resident", "Driver", "Official"].map((s) => <option key={s}>{s}</option>)}</select></div>
+        <button disabled={!valid} className={term ? "border border-amber-400 px-3 py-2 font-semibold disabled:opacity-40" : "rounded-md bg-[var(--teal)] px-3 py-2.5 font-semibold text-[#06201e] disabled:opacity-40"}>{term ? "[SUBMIT UPDATE]" : "Submit update"}</button>
+      </form>
+    </Modal>
+  );
+}
+
+/* ---------- Responder triage feed ---------- */
+function TriageTab({ items, regionId, onAdvance, onFocusSos, term }) {
+  const [scope, setScope] = useState("region");
+  const list = items.filter((i) => scope === "all" || i.regionId === regionId)
+    .map((i) => ({ ...i, pr: priorityOf(i) }))
+    .sort((a, b) => (a.status === "RESOLVED") - (b.status === "RESOLVED") || PRANK[a.pr] - PRANK[b.pr] || b.ts - a.ts);
+  const count = (s) => list.filter((i) => (s === "ACTIVE" ? i.status === "DISPATCHED" || i.status === "ON SCENE" : i.status === s)).length;
+  const reg = (id) => REGIONS.find((r) => r.id === id);
+
+  if (term) {
+    return (
+      <div className="font-mono text-[13px]">
+        <div className="mb-2">TRIAGE FEED · NEW:{count("NEW")} ACTIVE:{count("ACTIVE")} DONE:{count("RESOLVED")}</div>
+        <div className="mb-2 flex gap-3"><button onClick={() => setScope("region")} className={scope === "region" ? "underline" : ""}>[THIS REGION]</button><button onClick={() => setScope("all")} className={scope === "all" ? "underline" : ""}>[ALL NE]</button></div>
+        {list.map((i) => (
+          <div key={i.id} className="mb-3 border-t border-amber-400/40 pt-2">
+            <div>{i.id} {i.pr} {i.status} {ago(i.ts, true)}</div>
+            <div className="break-all">{buildSms({ code: reg(i.regionId).code, loc: i.loc, type: i.type, people: i.people, med: i.med, flags: i.flags, lang: i.lang })}</div>
+            {NEXT[i.status] && <button className="mt-1 border border-amber-400 px-2 py-0.5" onClick={() => onAdvance(i.id)}>[{NEXT[i.status][1].toUpperCase()}]</button>}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-2 text-xs">
+          {[["NEW", count("NEW"), "text-red-300 border-red-500/40"], ["ACTIVE", count("ACTIVE"), "text-amber-300 border-amber-500/40"], ["DONE", count("RESOLVED"), "text-emerald-300 border-emerald-500/40"]].map(([l, n, c]) => (
+            <span key={l} className={"rounded border px-2 py-1 font-semibold " + c}><span className="tnum">{n}</span> {l}</span>
+          ))}
+        </div>
+        <div className="inline-flex overflow-hidden rounded-md border border-[var(--line)] text-xs" role="group" aria-label="Feed scope">
+          {[["region", "This region"], ["all", "All North-East"]].map(([v, l]) => (
+            <button key={v} onClick={() => setScope(v)} aria-pressed={scope === v} className={"px-3 py-1.5 " + (scope === v ? "bg-[var(--teal)] font-semibold text-[#06201e]" : "bg-[var(--panel)] text-[var(--muted)]")}>{l}</button>
+          ))}
+        </div>
+      </div>
+      {list.length === 0 && <p className="rounded-lg border border-dashed border-[var(--line)] p-6 text-center text-sm text-[var(--muted)]">No requests in this scope. Send an SOS from the citizen panel and it will appear here.</p>}
+      {list.map((i) => {
+        const r = reg(i.regionId);
+        const sms = buildSms({ code: r.code, loc: i.loc, type: i.type, people: i.people, med: i.med, flags: i.flags, lang: i.lang });
+        const done = i.status === "RESOLVED";
+        return (
+          <article key={i.id} className={"rounded-lg border bg-[var(--panel)] p-4 " + (i.fresh ? "border-[var(--teal)]" : "border-[var(--line)]") + (done ? " opacity-60" : "")}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={"rounded border px-2 py-0.5 text-[11px] font-semibold tracking-wide " + PTONE[i.pr]}>{i.pr}</span>
+                <h3 className="font-display text-base font-semibold">{TYPE_LABEL[i.type]}{i.campName ? " · " + i.campName : ""}</h3>
+                {i.fresh && <span className="rounded bg-[var(--teal)] px-1.5 py-0.5 text-[10px] font-bold text-[#06201e]">NEW FROM CITIZEN</span>}
+              </div>
+              <span className="text-xs text-[var(--muted)]">{i.id} · {ago(i.ts)}</span>
+            </div>
+            <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[var(--muted)]">
+              <span className="flex items-center gap-1.5"><Icon name="pin" size={14} />{r.short} · {i.loc}</span>
+              <span className="flex items-center gap-1.5"><Icon name="users" size={14} />{i.people} {i.people === 1 ? "person" : "people"}</span>
+              {i.med && <span className="flex items-center gap-1.5 text-red-300"><Icon name="kit" size={14} />Medical need</span>}
+              {i.lang && <span>Language {i.lang}</span>}
+              {(i.flags || []).map((f) => <span key={f} className="rounded border border-amber-500/40 px-1.5 py-0.5 text-[11px] font-medium text-amber-300">{(FLAGS.find((x) => x.id === f) || {}).label}</span>)}
+            </p>
+            <div className="scroll-x mt-2 rounded bg-black/30 px-2.5 py-1.5 font-mono text-xs text-[var(--teal)]">{sms}</div>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold tracking-wide text-[var(--muted)]">STATUS · {i.status}</span>
+              {NEXT[i.status] && <button onClick={() => onAdvance(i.id)} className="rounded-md border border-[var(--teal)] px-3 py-1.5 text-sm font-medium text-[var(--teal)] hover:bg-[var(--teal)] hover:text-[#06201e]">{NEXT[i.status][1]}</button>}
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ---------- Offline rescue QR ---------- */
+function QrCard({ qr, sms, term }) {
+  if (!qr) return <p className="mt-3 text-sm text-red-300">This payload is too long for a QR code. Remove a flag or lower the people count.</p>;
+  const q = 4, n = qr.size + q * 2;
+  let d = "";
+  for (let y = 0; y < qr.size; y++) for (let x = 0; x < qr.size; x++) if (qr.modules[y][x]) d += "M" + (x + q) + " " + (y + q) + "h1v1h-1z";
+  return (
+    <div className={"mt-3 p-3 " + (term ? "border border-amber-400" : "rounded-lg border border-[var(--line)] bg-[var(--panel-2)]")}>
+      <div className="mx-auto w-full max-w-[300px] bg-white p-1">
+        <svg viewBox={"0 0 " + n + " " + n} shapeRendering="crispEdges" role="img" aria-label="Offline rescue QR code" className="block w-full">
+          <rect width={n} height={n} fill="#ffffff" />
+          <path d={d} fill="#000000" />
+        </svg>
+      </div>
+      <p className="mt-3 text-center text-sm font-semibold">Zero-Signal Mode: Volunteers or rescue drones can scan this screen offline</p>
+      <p className={"mt-1 text-center text-xs " + (term ? "" : "text-[var(--muted)]")}>Raise screen brightness and hold the phone steady. Generated on this device, no internet used.</p>
+      <p className={"mt-2 break-all text-center font-mono text-[11px] " + (term ? "" : "text-[var(--teal)]")}>{sms}</p>
+    </div>
+  );
+}
+
+/* ---------- SOS drawer ---------- */
+function SosPanel({ region, term, onClose, onBroadcast, onViewFeed }) {
+  const [type, setType] = useState("FLOOD");
+  const [people, setPeople] = useState(4);
+  const [lang, setLang] = useState("en");
+  const [med, setMed] = useState(false);
+  const [sent, setSent] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const smsRef = useRef(null);
+  const [flags, setFlags] = useState([]);
+  const [showQr, setShowQr] = useState(false);
+  const withMed = med || type === "MED";
+  const flagCodes = FLAGS.filter((f) => flags.includes(f.id)).map((f) => f.id);
+  const flagLabels = FLAGS.filter((f) => flags.includes(f.id)).map((f) => f.label);
+  const sms = buildSms({ code: region.code, loc: region.coords.txt, type, people, med: withMed, flags: flagCodes, lang: LANGS.find((l) => l.id === lang).tag });
+  const qr = useMemo(() => (showQr ? makeQR(sms) : null), [showQr, sms]);
+  const toggleFlag = (id) => setFlags((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]));
+  const P = PHRASE[lang];
+  const langMeta = LANGS.find((l) => l.id === lang);
+
+  useEffect(() => {
+    const k = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onClose]);
+
+  const doCopy = async () => {
+    const ok = await copyText(sms, smsRef.current);
+    setCopied(ok ? true : "manual");
+    setTimeout(() => setCopied(false), 2500);
+  };
+  const doBroadcast = () => { const id = onBroadcast({ type, people, med: withMed, flags: flagCodes, lang: langMeta.tag }); setSent(id); };
+
+  const box = term ? "border border-amber-400" : "rounded-lg border border-[var(--line)] bg-[var(--panel-2)]";
+  const lab = term ? "mb-1.5 text-xs uppercase" : "mb-1.5 text-xs font-medium uppercase tracking-wider text-[var(--muted)]";
+
+  return (
+    <div className="fixed inset-0 z-[75] flex justify-end bg-black/60" onMouseDown={(e) => e.target === e.currentTarget && onClose()} role="dialog" aria-modal="true" aria-label="SOS and need help">
+      <aside className={"drawer flex h-full w-full flex-col overflow-y-auto sm:max-w-[460px] " + (term ? "bg-black font-mono text-amber-400" : "border-l border-[var(--line)] bg-[var(--panel)]")} style={{ paddingTop: "env(safe-area-inset-top, 0px)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+        <div className={"flex items-center justify-between gap-3 px-4 py-3 " + (term ? "border-b border-amber-400" : "border-b border-[var(--line)]")}>
+          <div className="flex items-center gap-2">
+            {!term && <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--sos)] text-white"><Icon name="siren" size={17} /></span>}
+            <div>
+              <h2 className={term ? "font-semibold" : "font-display text-lg font-semibold leading-tight"}>{term ? "SOS / NEED HELP" : "SOS · Need help"}</h2>
+              <p className={term ? "text-xs" : "text-xs text-[var(--muted)]"}>{region.short}, {region.state} · GPS {region.coords.txt}</p>
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="Close SOS panel" className="p-1"><Icon name="x" size={20} /></button>
+        </div>
+
+        <div className="grid gap-5 p-4">
+          <section>
+            <div className={lab}>1 · Emergency type</div>
+            <div className="grid grid-cols-2 gap-2">
+              {TYPES.map((x) => (
+                <button key={x.id} onClick={() => setType(x.id)} aria-pressed={type === x.id}
+                  className={term ? "border px-2 py-2 text-left text-sm " + (type === x.id ? "border-amber-400 bg-amber-400 text-black" : "border-amber-400/40") : "flex items-center gap-2 rounded-md border px-3 py-2.5 text-left text-sm font-medium " + (type === x.id ? "border-[var(--sos)] bg-[var(--sos)]/15 text-white" : "border-[var(--line)] text-[var(--muted)] hover:text-[var(--text)]")}>
+                  {!term && <Icon name={x.icon} size={16} />}{x.label}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="grid grid-cols-2 gap-4">
+            <div>
+              <div className={lab}>2 · People</div>
+              <div className={"flex items-center justify-between " + (term ? "border border-amber-400" : "rounded-md border border-[var(--line)]")}>
+                <button aria-label="Fewer people" onClick={() => setPeople((p) => Math.max(1, p - 1))} className="px-3 py-2.5"><Icon name="minus" size={16} /></button>
+                <span className="tnum text-lg font-semibold" aria-live="polite">{people}</span>
+                <button aria-label="More people" onClick={() => setPeople((p) => Math.min(99, p + 1))} className="px-3 py-2.5"><Icon name="plus" size={16} /></button>
+              </div>
+            </div>
+            <div>
+              <div className={lab}>Medical need</div>
+              <button onClick={() => setMed(!withMed || type === "MED" ? true : false)} disabled={type === "MED"} aria-pressed={withMed}
+                className={term ? "w-full border px-2 py-2.5 text-sm " + (withMed ? "bg-amber-400 text-black" : "border-amber-400/40") : "flex w-full items-center justify-center gap-2 rounded-md border px-2 py-2.5 text-sm " + (withMed ? "border-red-400/60 bg-red-500/15 text-red-200" : "border-[var(--line)] text-[var(--muted)]")}>
+                {withMed ? "Yes, injured / ill" : "No"}
+              </button>
+            </div>
+          </section>
+
+          <section>
+            <div className={lab}>3 · Who needs extra help? (tap all that apply)</div>
+            <div className="flex flex-wrap gap-2">
+              {FLAGS.map((f) => {
+                const on = flags.includes(f.id);
+                return (
+                  <button key={f.id} onClick={() => toggleFlag(f.id)} aria-pressed={on}
+                    className={term ? "border px-2.5 py-1.5 text-sm " + (on ? "bg-amber-400 text-black" : "border-amber-400/40") : "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm " + (on ? "border-amber-400 bg-amber-400/15 font-semibold text-amber-200" : "border-[var(--line)] text-[var(--muted)] hover:text-[var(--text)]")}>
+                    {!term && on && <Icon name="check" size={13} />}{f.label}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section>
+            <div className={lab}>4 · Language</div>
+            <div className="flex flex-wrap gap-2">
+              {LANGS.map((l) => (
+                <button key={l.id} onClick={() => setLang(l.id)} aria-pressed={lang === l.id}
+                  className={term ? "border px-2.5 py-1.5 text-sm " + (lang === l.id ? "bg-amber-400 text-black" : "border-amber-400/40") : "rounded-full border px-3 py-1.5 text-sm " + (lang === l.id ? "border-[var(--teal)] bg-[var(--teal)] font-semibold text-[#06201e]" : "border-[var(--line)] text-[var(--muted)]")}>
+                  {l.native}{l.native !== l.label ? " · " + l.label : ""}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <div className={lab}>Emergency card · {langMeta.label}</div>
+            <div className={box + " p-4"}>
+              <div className={term ? "text-base font-semibold" : "text-center text-lg font-bold tracking-wide text-[var(--sos)]"}>{P.head}</div>
+              <p className="mt-3 text-[17px] leading-snug" lang={lang === "kh" ? "en" : lang}>{P[type]}</p>
+              <dl className={"mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm " + (term ? "" : "text-[var(--muted)]")}>
+                <dt>{P.ppl}</dt><dd className="tnum font-semibold">{people}</dd>
+                <dt>{P.loc}</dt><dd className="font-semibold">{region.short} · {region.coords.txt}</dd>
+                {withMed && <><dt>+</dt><dd className="font-semibold">{P.med}</dd></>}
+                {flagLabels.length > 0 && <><dt>Needs</dt><dd className="font-semibold">{flagLabels.join(", ")}</dd></>}
+              </dl>
+              <p className={"mt-3 text-xs " + (term ? "" : "text-[var(--muted)]")}>{P.show}</p>
+              {lang !== "en" && <p className={"mt-2 border-t pt-2 text-xs " + (term ? "border-amber-400/40" : "border-[var(--line)] text-[var(--muted)]")}>For responders (English): {PHRASE.en[type]} {people} {people === 1 ? "person" : "people"}{withMed ? ", medical need" : ""}{flagLabels.length ? ". Needs: " + flagLabels.join(", ") : ""}.</p>}
+              {lang === "kh" && <p className="mt-2 text-xs text-amber-300">Khasi text is a draft mix of Khasi and English. Have a local speaker check it before field use.</p>}
+            </div>
+          </section>
+
+          <section>
+            <div className={lab}>Compressed SMS payload</div>
+            <input ref={smsRef} readOnly value={sms} aria-label="SMS payload" onFocus={(e) => e.target.select()}
+              className={"w-full px-3 py-2.5 font-mono text-sm " + (term ? "border border-amber-400 bg-black text-amber-300" : "rounded-md border border-[var(--line)] bg-black/40 text-[var(--teal)]")} />
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <span className="tnum text-xs text-[var(--muted)]">{sms.length} of 160 characters · GPS stamped</span>
+              <div className="flex flex-wrap justify-end gap-2">
+              <button onClick={() => setShowQr(!showQr)} aria-pressed={showQr} className={term ? "border border-amber-400 px-3 py-1.5 text-sm " + (showQr ? "bg-amber-400 text-black" : "") : "flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium " + (showQr ? "border-white bg-white text-black" : "border-white/40 text-white hover:bg-white hover:text-black")}>
+                <Icon name="qr" size={14} />{showQr ? "Hide QR" : "Show Offline Rescue QR"}
+              </button>
+              <button onClick={doCopy} className={term ? "border border-amber-400 px-3 py-1.5 text-sm" : "flex items-center gap-1.5 rounded-md border border-[var(--teal)] px-3 py-1.5 text-sm font-medium text-[var(--teal)] hover:bg-[var(--teal)] hover:text-[#06201e]"}>
+                <Icon name={copied === true ? "check" : "copy"} size={14} />{copied === true ? "Copied" : copied === "manual" ? "Selected, press copy" : "Copy for SMS"}
+              </button>
+              </div>
+            </div>
+            {showQr && <QrCard qr={qr} sms={sms} term={term} />}
+            <p className="mt-2 text-xs text-[var(--muted)]">Paste into any SMS app and send to your district control room. Works on 2G with no data.</p>
+          </section>
+
+          {sent ? (
+            <div className={box + " p-4"}>
+              <div className="flex items-center gap-2 font-semibold text-emerald-300"><Icon name="check" size={16} />Broadcast to local responders · {sent}</div>
+              <p className="mt-1 text-sm text-[var(--muted)]">Your request is now live in the Responder Triage Feed for {region.short}.</p>
+              <div className="mt-3 flex gap-2">
+                <button onClick={onViewFeed} className={term ? "border border-amber-400 px-3 py-1.5 text-sm" : "rounded-md bg-[var(--teal)] px-3 py-2 text-sm font-semibold text-[#06201e]"}>View in responder feed</button>
+                <button onClick={() => setSent(null)} className={term ? "border border-amber-400/50 px-3 py-1.5 text-sm" : "rounded-md border border-[var(--line)] px-3 py-2 text-sm text-[var(--muted)]"}>Send another</button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={doBroadcast} className={term ? "border-2 border-amber-400 bg-amber-400 px-3 py-3 font-semibold text-black" : "pulse-sos flex items-center justify-center gap-2 rounded-lg bg-[var(--sos)] px-4 py-3.5 text-base font-semibold text-white hover:brightness-110"}>
+              {!term && <Icon name="radio" size={18} />}{term ? "[BROADCAST TO LOCAL RESPONDERS]" : "Broadcast to local responders"}
+            </button>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+/* ---------- 2G terminal view ---------- */
+function Terminal({ region, camps, chokes, tab, setTab, level, alert, helplines, onReserve, onReport, onOpenSos, triage, onAdvance, onAck, onRoutes, battery, filter, setFilter, speech }) {
+  const tabs = [["camps", "1 CAMPS"], ["roads", "2 ROADS"], ["triage", "3 TRIAGE"]];
+  return (
+    <div className="mx-auto max-w-3xl pb-28 pt-3 font-mono text-[13px] leading-relaxed">
+      <div className="mb-3 border border-amber-400 px-3 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-semibold">NEEV//2G TERMINAL</span>
+          <span>CACHED LOCALLY · WORKS WITHOUT INTERNET (14 KB)</span>
+        </div>
+        <div className="mt-1 text-amber-300/80">BATTERY SAVER ON: NO ANIMATION, NO IMAGES{battery !== null ? " · BATT " + battery + "%" : ""}</div>
+      </div>
+      <AlertBanner alert={alert} term onAck={onAck} onRoutes={onRoutes} speech={speech} />
+      <div className="mb-3">
+        <div>REGION: {region.name.toUpperCase()}</div>
+        <div>LEVEL: {level} · RAIN24H: {region.rain24}MM · {region.gauge.label.toUpperCase()}: {region.gauge.now}{region.gauge.unit}</div>
+      </div>
+      <div className="mb-3 border-t border-amber-400/50 pt-2">
+        <div className="mb-1 font-semibold">ADVISORY</div>
+        {region.offline.map((l, i) => <div key={i}>- {l}</div>)}
+      </div>
+      <div className="mb-3 border-t border-amber-400/50 pt-2">
+        <div className="mb-1 font-semibold">HELPLINES (CACHED, DIAL DIRECT)</div>
+        {helplines.map((h) => <div key={h.n} className="flex gap-3"><span className="w-12 font-semibold">{h.n}</span><span>{h.l.toUpperCase()}</span></div>)}
+      </div>
+      <div className="mb-3 flex flex-wrap gap-2 border-t border-amber-400/50 pt-2">
+        {tabs.map(([id, l]) => <button key={id} onClick={() => setTab(id)} className={"border border-amber-400 px-2.5 py-1 " + (tab === id ? "bg-amber-400 text-black" : "")}>[{l}]</button>)}
+        <button onClick={onOpenSos} className="border border-amber-400 bg-amber-400 px-2.5 py-1 font-semibold text-black">[SOS]</button>
+      </div>
+      {tab === "camps" && (
+        <div>
+          <div className="mb-3 flex flex-wrap gap-2">{FILTERS.map(([id, l]) => <button key={id} onClick={() => setFilter(id)} className={"border border-amber-400 px-2 py-0.5 " + (filter === id ? "bg-amber-400 text-black" : "")}>[{l.toUpperCase()}]</button>)}</div>
+          {camps.filter((c) => filter === "all" || (c.feats || []).includes(filter)).length === 0 && <div className="mb-3">NO HUB MATCHES THIS FILTER. TRY [ALL HUBS] OR CALL 112.</div>}
+          {camps.filter((c) => filter === "all" || (c.feats || []).includes(filter)).map((c, i) => (
+            <div key={c.id} className="mb-3">
+              <div className="font-semibold">{String(i + 1).padStart(2, "0")} {c.name.toUpperCase()} · {c.km.toFixed(1)}KM</div>
+              <div>FEAT: {(c.feats || []).map((f) => FEAT_LABEL[f].toUpperCase()).join(" / ") || "NONE"}</div>
+              <div>BED {tbar(c.beds[1] - c.beds[0], c.beds[1])} {c.beds[1] - c.beds[0]} FREE</div>
+              <div>MED {tbar(c.med[1] - c.med[0], c.med[1])} {c.med[1] - c.med[0]} FREE</div>
+              <div>H2O {tbar(c.water[1] - c.water[0], c.water[1])} {c.water[1] - c.water[0]}KL FREE</div>
+              {c.reserved ? <div>CONFIRMED {c.reserved}</div> : <button className="mt-1 border border-amber-400 px-2 py-0.5" onClick={() => onReserve(c)}>[{KIND[c.kind].act.toUpperCase()}]</button>}
+            </div>
+          ))}
+        </div>
+      )}
+      {tab === "roads" && (
+        <div>
+          <button className="mb-3 border border-amber-400 px-2 py-0.5" onClick={onReport}>[+ REPORT GROUND UPDATE]</button>
+          {[...chokes].sort((a, b) => STATUS[a.status].rank - STATUS[b.status].rank).map((c) => (
+            <div key={c.id} className="mb-3">
+              <div className="font-semibold">{c.name.toUpperCase()}</div>
+              <div>STATUS: {c.status} · VERIFIED {ago(c.ts, true)} AGO</div>
+              <div className="text-amber-300/80">{c.note}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {tab === "triage" && <TriageTab items={triage} regionId={region.id} onAdvance={onAdvance} term />}
+    </div>
+  );
+}
+
+/* ---------- Why NEEV / impact ---------- */
+function ImpactModal({ term, onClose }) {
+  const fails = [
+    ["wifioff", "4G blackouts", "Towers lose power or fibre in the first hours. Apps that need live maps, logins or push servers go silent exactly when people need them."],
+    ["route", "NH-10 and NH-6 cutoffs", "One slip on NH-10 isolates Gangtok, and NH-6 does the same for Shillong. Generic apps keep showing a road as open, with no ground truth."],
+    ["battery", "Battery drain", "Maps, video and constant syncing flatten a phone in hours. Without grid power, a dead phone is a dead lifeline."],
+    ["msg", "Local dialects", "Alerts in English or Hindi alone miss Assamese, Khasi and Bengali speakers, and a panicked person will not type a long message."],
+  ];
+  const layers = [
+    ["wifioff", "14 KB 2G Survival Mode", "A black-and-amber text terminal with cached advisories and helplines. No images, no animation, lowest battery draw."],
+    ["msg", "Vernacular SMS / QR SOS", "One tap builds an emergency card in five languages, a compact GPS-stamped SMS with vulnerability flags, and an offline QR that volunteers or drones can scan."],
+    ["route", "Crowdsourced chokepoint telemetry", "Residents, drivers and volunteers report road and ferry status. Timestamps show what was verified and when, and responders triage from the same feed."],
+  ];
+  const card = term ? "border border-amber-400 p-3" : "rounded-lg border border-[var(--line)] bg-[var(--panel-2)] p-3.5";
+  const sub = term ? "" : "text-[var(--muted)]";
+  return (
+    <Modal onClose={onClose} term={term} label="Why NEEV" wide>
+      <div className="p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className={term ? "text-base font-semibold" : "font-display text-2xl font-semibold leading-tight"}>Why NEEV?</h2>
+            <p className={"mt-1 text-sm " + sub}>Built for the places where the network fails first.</p>
+          </div>
+          <button onClick={onClose} aria-label="Close" className="p-1"><Icon name="x" size={20} /></button>
+        </div>
+
+        <h3 className={"mb-2 mt-5 text-xs font-semibold uppercase tracking-wider " + (term ? "" : "text-[var(--teal)]")}>Why existing disaster apps fail in North-East India</h3>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {fails.map(([ic, h, b]) => (
+            <div key={h} className={card}>
+              <div className="flex items-center gap-2 font-semibold"><Icon name={ic} size={16} className={term ? "" : "text-red-300"} />{h}</div>
+              <p className={"mt-1.5 text-sm leading-relaxed " + sub}>{b}</p>
+            </div>
+          ))}
+        </div>
+
+        <h3 className={"mb-2 mt-6 text-xs font-semibold uppercase tracking-wider " + (term ? "" : "text-[var(--teal)]")}>NEEV's 3-layer offline-first architecture</h3>
+        <ol className="grid gap-0">
+          {layers.map(([ic, h, b], i) => (
+            <li key={h} className="relative flex gap-3 pb-3 last:pb-0">
+              <div className="flex flex-col items-center">
+                <span className={"flex h-8 w-8 shrink-0 items-center justify-center " + (term ? "border border-amber-400" : "rounded-full bg-[var(--teal)] text-[#06201e]")}><Icon name={ic} size={16} /></span>
+                {i < layers.length - 1 && <span className={"mt-1 w-px flex-1 " + (term ? "bg-amber-400/60" : "bg-[var(--line)]")} />}
+              </div>
+              <div className={card + " min-w-0 flex-1"}>
+                <div className="text-xs font-semibold uppercase tracking-wider opacity-70">Layer {i + 1}</div>
+                <div className="font-semibold">{h}</div>
+                <p className={"mt-1 text-sm leading-relaxed " + sub}>{b}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+
+        <div className={"mt-5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm " + (term ? "" : "")}>
+          {["Citizen phone", "SMS or offline QR", "Responder triage feed", "Dispatch"].map((s, i, a) => (
+            <React.Fragment key={s}>
+              <span className={term ? "border border-amber-400 px-2 py-1" : "rounded border border-[var(--line)] bg-[var(--panel-2)] px-2.5 py-1 font-medium"}>{s}</span>
+              {i < a.length - 1 && <span aria-hidden="true" className={sub}>→</span>}
+            </React.Fragment>
+          ))}
+        </div>
+        <p className={"mt-3 text-xs leading-relaxed " + sub}>When towers fail, SMS and QR still work. When roads fail, the feed shows which lifelines are open. When batteries fail, 2G mode uses far less power than a map app.</p>
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------- App ---------- */
+function App() {
+  const [regionId, setRegionId] = useState("ghy");
+  const [term, setTerm] = useState(false);
+  const [tab, setTab] = useState("camps");
+  const [sosOpen, setSosOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [impactOpen, setImpactOpen] = useState(false);
+  const [hubFilter, setHubFilter] = useState("all");
+  const [alert, setAlert] = useState(null);
+  const [toasts, setToasts] = useState([]);
+  const [, setTick] = useState(0);
+  const [battery, setBattery] = useState(null);
+  const idRef = useRef(1040);
+
+  const [camps, setCamps] = useState(() => Object.fromEntries(REGIONS.map((r) => [r.id, r.camps.map((c) => ({ ...c, feats: CAMP_FEATS[c.id] || [] }))])));
+  const [chokes, setChokes] = useState(() => Object.fromEntries(REGIONS.map((r) => [r.id, r.chokes.map((c) => ({ ...c, ts: t(c.ver) }))])));
+  const [levels, setLevels] = useState(() => Object.fromEntries(REGIONS.map((r) => [r.id, r.level])));
+  const [log, setLog] = useState([]);
+  const [triage, setTriage] = useState(() => REGIONS.flatMap((r) => r.triage.map((i) => ({ ...i, regionId: r.id }))));
+
+  const region = REGIONS.find((r) => r.id === regionId);
+  const level = levels[regionId];
+  const speech = useSpeech(region);
+
+  useEffect(() => { const i = setInterval(() => setTick((x) => x + 1), 30000); return () => clearInterval(i); }, []);
+  useEffect(() => { document.documentElement.setAttribute("data-mode", term ? "term" : "std"); }, [term]);
+  useEffect(() => {
+    try { if (navigator.getBattery) navigator.getBattery().then((b) => setBattery(Math.round(b.level * 100))).catch(() => {}); } catch (e) {}
+  }, []);
+
+  const toast = useCallback((msg) => {
+    const id = Math.random();
+    setToasts((x) => [...x, { id, msg }]);
+    setTimeout(() => setToasts((x) => x.filter((y) => y.id !== id)), 3600);
+  }, []);
+
+  const addTriage = (item) => {
+    const id = "R-" + ++idRef.current;
+    setTriage((x) => [{ ...item, id, ts: Date.now(), status: "NEW", fresh: true }, ...x]);
+    return id;
+  };
+
+  const onReserve = (c) => {
+    const code = "NV-" + String(Math.floor(1000 + Math.random() * 9000));
+    setCamps((all) => ({ ...all, [regionId]: all[regionId].map((x) => x.id === c.id ? { ...x, beds: [x.beds[0] + 1, x.beds[1]], reserved: code } : x) }));
+    addTriage({ regionId, type: "PICKUP", people: 1, med: false, loc: region.coords.txt, source: "CAMP", campName: c.name });
+    toast((KIND[c.kind].act) + " confirmed at " + c.name + " · " + code);
+  };
+
+  const onBroadcast = ({ type, people, med, flags, lang }) => {
+    const id = addTriage({ regionId, type, people, med, flags, lang, loc: region.coords.txt, source: "SOS" });
+    toast("SOS broadcast to " + region.short + " responders");
+    return id;
+  };
+
+  const onAdvance = (id) => {
+    setTriage((all) => all.map((i) => (i.id === id && NEXT[i.status] ? { ...i, status: NEXT[i.status][0], fresh: false } : i)));
+  };
+
+  const onReportSubmit = ({ target, newName, status, note, by }) => {
+    const now = Date.now();
+    let name;
+    setChokes((all) => {
+      const list = all[regionId];
+      if (target === "__new") {
+        name = newName;
+        return { ...all, [regionId]: [{ id: "n" + now, name: newName, note: note || "Reported from the ground.", status, ts: now, by, reports: 1 }, ...list] };
+      }
+      return { ...all, [regionId]: list.map((c) => { if (c.id !== target) return c; name = c.name; return { ...c, status, ts: now, by, note: note || c.note, reports: c.reports + 1 }; }) };
+    });
+    setTimeout(() => {
+      setLog((l) => [{ id: now, name: name || newName, status, note, by, ts: now }, ...l]);
+    }, 0);
+    setReportOpen(false);
+    toast("Update published · feed refreshed");
+  };
+
+  const simulate = () => {
+    const a = region.alert;
+    setAlert({ ...a, regionId, ts: Date.now() });
+    setLevels((l) => ({ ...l, [regionId]: "RED" }));
+    playSiren();
+    const eff = a.effect;
+    const now = Date.now();
+    setChokes((all) => ({ ...all, [regionId]: all[regionId].map((c) => c.id === eff.chokeId ? { ...c, status: eff.status, note: eff.note, ts: now, by: "Auto advisory", reports: c.reports + 1 } : c) }));
+    const cn = chokes[regionId].find((c) => c.id === eff.chokeId);
+    setLog((l) => [{ id: now, name: cn ? cn.name : "Highway", status: eff.status, note: eff.note, by: "Auto advisory", ts: now }, ...l]);
+  };
+
+  const switchRegion = (id) => { setRegionId(id); if (alert && alert.regionId !== id) setAlert(null); };
+  const showRoutes = () => { setTab(term ? "roads" : "chokes"); setAlert(null); };
+  const showFeed = () => { setSosOpen(false); setTab("triage"); };
+
+  const campsHere = camps[regionId];
+  const chokesHere = chokes[regionId];
+  const openCamps = campsHere.filter((c) => c.beds[1] - c.beds[0] > 0).length;
+  const termTab = tab === "chokes" ? "roads" : tab;
+  const stdTab = tab === "roads" ? "chokes" : tab;
+  const levelTone = level === "RED" ? "border-red-500/50 bg-red-500/15 text-red-300" : "border-amber-500/50 bg-amber-500/15 text-amber-300";
+
+  return (
+    <div className="min-h-screen">
+      {/* Header */}
+      <header className={"sticky-top z-50 -mx-4 px-4 " + (term ? "border-b border-amber-400 bg-black" : "border-b border-[var(--line)] bg-[var(--ink)]/95 backdrop-blur")} style={{ marginLeft: "calc(-1 * max(16px, env(safe-area-inset-left, 0px)))", marginRight: "calc(-1 * max(16px, env(safe-area-inset-right, 0px)))", paddingLeft: "max(16px, env(safe-area-inset-left, 0px))", paddingRight: "max(16px, env(safe-area-inset-right, 0px))" }}>
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 py-2.5">
+          <div className="mr-auto min-w-0">
+            <div className={term ? "font-mono text-base font-semibold" : "font-display text-xl font-bold leading-none tracking-wide"}>NEEV</div>
+            <div className={"hidden text-[11px] sm:block " + (term ? "font-mono" : "text-[var(--muted)]")}>North-East Emergency &amp; Evacuation Grid</div>
+          </div>
+
+          <label className="order-3 w-full min-w-0 sm:order-none sm:w-auto sm:min-w-[280px]">
+            <span className="sr-only">Region</span>
+            <select value={regionId} onChange={(e) => switchRegion(e.target.value)} className={"w-full px-2.5 py-2 text-sm " + (term ? "border border-amber-400 bg-black font-mono text-amber-400" : "rounded-md border border-[var(--line)] bg-[var(--panel)]")}>
+              {REGIONS.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          </label>
+
+          <button role="switch" aria-checked={term} onClick={() => { setTerm(!term); setTab(term ? "camps" : "camps"); }} className={"flex items-center gap-2 px-2 py-1.5 text-xs " + (term ? "border border-amber-400 font-mono" : "rounded-md border border-[var(--line)] bg-[var(--panel)]")}>
+            <span className={term ? "" : "text-[var(--muted)]"}>Standard</span>
+            <span className={"relative inline-block h-5 w-9 shrink-0 rounded-full " + (term ? "bg-amber-400" : "bg-white/15")}>
+              <span className={"absolute top-0.5 h-4 w-4 rounded-full " + (term ? "left-[18px] bg-black" : "left-0.5 bg-white")} />
+            </span>
+            <span className={term ? "font-semibold" : "text-[var(--muted)]"}>2G / Low-Battery Offline</span>
+          </button>
+
+          <button onClick={simulate} className={"text-xs underline-offset-2 hover:underline " + (term ? "font-mono" : "text-[var(--muted)] hover:text-[var(--text)]")} title="Demo helper">
+            Simulate live alert
+          </button>
+
+          <button onClick={() => setImpactOpen(true)} className={"flex items-center gap-1.5 text-xs " + (term ? "border border-amber-400 px-2 py-1.5 font-mono" : "rounded-md border border-[var(--line)] px-2.5 py-1.5 text-[var(--muted)] hover:text-[var(--text)]")}>
+            <Icon name="info" size={14} />About / Impact
+          </button>
+
+          <button onClick={() => setSosOpen(true)} className={term ? "border-2 border-amber-400 bg-amber-400 px-3 py-1.5 font-mono font-semibold text-black" : "pulse-sos flex items-center gap-1.5 rounded-md bg-[var(--sos)] px-4 py-2 text-sm font-bold tracking-wide text-white hover:brightness-110"}>
+            {!term && <Icon name="siren" size={16} />}{term ? "[SOS]" : "SOS / NEED HELP"}
+          </button>
+        </div>
+      </header>
+
+      {term ? (
+        <Terminal region={region} camps={campsHere} chokes={chokesHere} tab={termTab} setTab={setTab} level={level} alert={alert && alert.regionId === regionId ? alert : null}
+          helplines={HELPLINES} onReserve={onReserve} onReport={() => setReportOpen(true)} onOpenSos={() => setSosOpen(true)} triage={triage} onAdvance={onAdvance}
+          onAck={() => setAlert(null)} onRoutes={showRoutes} battery={battery} filter={hubFilter} setFilter={setHubFilter} speech={speech} />
+      ) : (
+        <main className="mx-auto max-w-6xl pb-32 pt-4">
+          <AlertBanner alert={alert && alert.regionId === regionId ? alert : null} onAck={() => setAlert(null)} onRoutes={showRoutes} speech={speech} />
+
+          {/* Situation strip */}
+          <section className="mb-5 grid gap-5 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-4 md:grid-cols-[1fr_auto]">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={"rounded border px-2 py-0.5 text-[11px] font-bold tracking-wider " + levelTone}>{level} ALERT</span>
+                <span className="text-xs text-[var(--muted)]">{region.state} · {region.hazard}</span>
+              </div>
+              <h1 className="mt-2 font-display text-2xl font-semibold leading-tight">{region.short}: what is happening now</h1>
+              <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-[var(--muted)]">{region.advisory}</p>
+              <ListenButton speech={speech} className="mt-3 rounded-md border border-[var(--teal)] px-3 py-1.5 text-sm font-medium text-[var(--teal)] hover:bg-[var(--teal)] hover:text-[#06201e]" />
+              <dl className="mt-4 flex flex-wrap gap-x-8 gap-y-3 text-sm">
+                <div><dt className="text-xs text-[var(--muted)]">Rain, last 24 h</dt><dd className="tnum font-display text-lg font-semibold">{region.rain24} mm</dd></div>
+                <div><dt className="text-xs text-[var(--muted)]">{region.gauge.label}</dt><dd className="tnum font-display text-lg font-semibold">{region.gauge.now} {region.gauge.unit} <span className="text-xs font-normal text-[var(--muted)]">danger {region.gauge.danger}</span></dd></div>
+                <div><dt className="text-xs text-[var(--muted)]">Shelters with space</dt><dd className="tnum font-display text-lg font-semibold">{openCamps} of {campsHere.length}</dd></div>
+              </dl>
+            </div>
+            <div className="flex items-end"><RainChart data={region.rain} /></div>
+          </section>
+
+          {/* Tabs */}
+          <div className="scroll-x mb-4 border-b border-[var(--line)]" role="tablist">
+            <div className="flex min-w-max gap-1">
+              {[["camps", "tent", "Relief Camps & Boat/Rescue Points"], ["chokes", "route", "Highway & Terrain Chokepoints"], ["triage", "radio", "Responder Triage Feed"]].map(([id, ic, l]) => (
+                <button key={id} role="tab" aria-selected={stdTab === id} onClick={() => setTab(id)}
+                  className={"flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-sm font-medium " + (stdTab === id ? "border-[var(--teal)] text-[var(--text)]" : "border-transparent text-[var(--muted)] hover:text-[var(--text)]")}>
+                  <Icon name={ic} size={15} />{l}
+                  {id === "triage" && <span className="tnum rounded bg-white/10 px-1.5 text-xs">{triage.filter((i) => i.regionId === regionId && i.status === "NEW").length}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {stdTab === "camps" && <CampsTab camps={campsHere} onReserve={onReserve} filter={hubFilter} setFilter={setHubFilter} />}
+          {stdTab === "chokes" && <ChokesTab chokes={chokesHere} log={log} onReport={() => setReportOpen(true)} />}
+          {stdTab === "triage" && <TriageTab items={triage} regionId={regionId} onAdvance={onAdvance} />}
+
+          <section className="mt-8 grid gap-3 border-t border-[var(--line)] pt-5 sm:grid-cols-[auto_1fr] sm:items-center">
+            <div className="flex flex-wrap gap-x-5 gap-y-1">
+              {HELPLINES.map((h) => <span key={h.n} className="flex items-center gap-1.5 text-sm"><Icon name="phone" size={13} className="text-[var(--teal)]" /><span className="tnum font-semibold">{h.n}</span><span className="text-xs text-[var(--muted)]">{h.l}</span></span>)}
+            </div>
+            <p className="text-xs text-[var(--muted)] sm:text-right">Demo build. Camp numbers, reports and alerts are illustrative, not official. Call 112 in a real emergency.</p>
+          </section>
+        </main>
+      )}
+
+      {/* Floating SOS on small screens */}
+      {!sosOpen && (
+        <button onClick={() => setSosOpen(true)} aria-label="SOS, need help"
+          className={"fixed z-40 sm:hidden " + (term ? "border-2 border-amber-400 bg-amber-400 px-4 py-3 font-mono font-bold text-black" : "pulse-sos flex items-center gap-2 rounded-full bg-[var(--sos)] px-5 py-3.5 font-bold text-white shadow-xl")}
+          style={{ right: "max(16px, env(safe-area-inset-right, 0px))", bottom: "calc(16px + env(safe-area-inset-bottom, 0px))" }}>
+          {!term && <Icon name="siren" size={18} />}SOS
+        </button>
+      )}
+
+      {sosOpen && <SosPanel region={region} term={term} onClose={() => setSosOpen(false)} onBroadcast={onBroadcast} onViewFeed={showFeed} />}
+      {impactOpen && <ImpactModal term={term} onClose={() => setImpactOpen(false)} />}
+      {reportOpen && <ReportModal chokes={chokesHere} term={term} onClose={() => setReportOpen(false)} onSubmit={onReportSubmit} />}
+      <Toasts items={toasts} term={term} />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+
+</body></html>
